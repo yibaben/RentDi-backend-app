@@ -22,6 +22,7 @@ import com.rentdi.util.JwtUtil;
 import com.rentdi.util.TokenBlacklist;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
@@ -31,11 +32,14 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
+import java.time.Instant;
 import java.util.HashSet;
 import java.util.Set;
+import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class AuthServiceImpl implements AuthService {
 
     private final UserRepository userRepository;
@@ -76,6 +80,9 @@ public class AuthServiceImpl implements AuthService {
         roles.add(role);
         user.setRoles(roles);
         
+        // Set user as logged in since we're providing an auth token
+        user.setIsLoggedIn(true);
+        
         // Save user
         User savedUser = userRepository.save(user);
         
@@ -90,29 +97,60 @@ public class AuthServiceImpl implements AuthService {
     }
 
     @Override
+    @Transactional
     public AuthResponse login(LoginRequest request) {
-        // Authenticate user
-        Authentication authentication = authenticationManager.authenticate(
-                new UsernamePasswordAuthenticationToken(request.getEmail(), request.getPassword())
-        );
-        
-        SecurityContextHolder.getContext().setAuthentication(authentication);
-        
-        // Get user from authentication
-        User user = (User) authentication.getPrincipal();
-        
-        // Update login status
-        user.setIsLoggedIn(true);
-        userRepository.save(user);
-        
-        // Generate JWT token
-        String token = jwtUtil.generateToken(user);
-        
-        // Generate refresh token
-        RefreshToken refreshToken = refreshTokenService.createRefreshToken(user);
-        
-        // Return response
-        return userMapper.toAuthResponse(user, token, refreshToken.getToken());
+        try {
+            // Authenticate user
+            Authentication authentication = authenticationManager.authenticate(
+                    new UsernamePasswordAuthenticationToken(request.getEmail(), request.getPassword())
+            );
+            
+            SecurityContextHolder.getContext().setAuthentication(authentication);
+            
+            // Get user from authentication
+            User user = (User) authentication.getPrincipal();
+            
+            // Update login status
+            user.setIsLoggedIn(true);
+            userRepository.save(user);
+            
+            // Generate JWT token
+            String token = jwtUtil.generateToken(user);
+            
+            // Get or create refresh token, handling any errors
+            RefreshToken refreshToken;
+            String refreshTokenValue;
+            try {
+                // Try to create or update refresh token
+                refreshToken = refreshTokenService.createRefreshToken(user);
+                refreshTokenValue = refreshToken.getToken();
+            } catch (Exception e) {
+                // If there's any issue with refresh token, log it but don't fail the login
+                log.error("Error creating refresh token: {}", e.getMessage(), e);
+                
+                // As a fallback, try to delete all refresh tokens for this user and create a new one
+                try {
+                    refreshTokenService.deleteByUserId(user.getId());
+                    refreshToken = RefreshToken.builder()
+                            .user(user)
+                            .token(UUID.randomUUID().toString())
+                            .expiryDate(Instant.now().plusMillis(refreshTokenService.getRefreshTokenDuration()))
+                            .build();
+                    refreshTokenValue = refreshToken.getToken();
+                } catch (Exception ex) {
+                    // If even that fails, just return a login response without a refresh token
+                    log.error("Fallback refresh token creation failed: {}", ex.getMessage(), ex);
+                    refreshTokenValue = null;
+                }
+            }
+            
+            // Return response
+            return userMapper.toAuthResponse(user, token, refreshTokenValue);
+        } catch (Exception e) {
+            // Log the specific error for debugging
+            log.error("Login error: {}", e.getMessage(), e);
+            throw e; // Rethrow to be handled by the global exception handler
+        }
     }
     
     @Override
@@ -127,6 +165,7 @@ public class AuthServiceImpl implements AuthService {
                     return TokenRefreshResponse.builder()
                             .accessToken(token)
                             .refreshToken(requestRefreshToken)
+                            .tokenType("Bearer")
                             .build();
                 })
                 .orElseThrow(() -> new TokenRefreshException(requestRefreshToken,

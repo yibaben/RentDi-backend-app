@@ -10,4 +10,5 @@ public interface RefreshTokenService {
     Optional<RefreshToken> findByToken(String token);
     RefreshToken verifyExpiration(RefreshToken token);
     void deleteByUserId(Long userId);
+    long getRefreshTokenDuration();
 } 

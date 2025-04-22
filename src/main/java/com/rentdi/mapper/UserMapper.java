@@ -31,7 +31,7 @@ public class UserMapper {
                 .map(Role::getName)
                 .collect(Collectors.toSet());
 
-        return AuthResponse.builder()
+        AuthResponse.AuthResponseBuilder builder = AuthResponse.builder()
                 .id(user.getId())
                 .firstName(user.getFirstName())
                 .lastName(user.getLastName())
@@ -42,9 +42,14 @@ public class UserMapper {
                 .isLoggedIn(user.getIsLoggedIn())
                 .roles(roleNames)
                 .token(token)
-                .refreshToken(refreshToken)
                 .createdAt(user.getCreatedAt())
-                .updatedAt(user.getUpdatedAt())
-                .build();
+                .updatedAt(user.getUpdatedAt());
+                
+        // Only add refresh token if it's not null
+        if (refreshToken != null) {
+            builder.refreshToken(refreshToken);
+        }
+        
+        return builder.build();
     }
 } 

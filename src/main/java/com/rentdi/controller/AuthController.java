@@ -3,6 +3,7 @@ package com.rentdi.controller;
 import com.rentdi.dto.request.LoginRequest;
 import com.rentdi.dto.request.RegisterRequest;
 import com.rentdi.dto.request.TokenRefreshRequest;
+import com.rentdi.dto.response.ApiResponse;
 import com.rentdi.dto.response.AuthResponse;
 import com.rentdi.dto.response.MessageResponse;
 import com.rentdi.dto.response.TokenRefreshResponse;
@@ -26,24 +27,28 @@ public class AuthController {
     private final AuthService authService;
 
     @PostMapping("/register")
-    public ResponseEntity<AuthResponse> register(@Valid @RequestBody RegisterRequest request) {
-        return new ResponseEntity<>(authService.register(request), HttpStatus.CREATED);
+    public ResponseEntity<ApiResponse<AuthResponse>> register(@Valid @RequestBody RegisterRequest request) {
+        AuthResponse authResponse = authService.register(request);
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(ApiResponse.created(authResponse));
     }
 
     @PostMapping("/login")
-    public ResponseEntity<AuthResponse> login(@Valid @RequestBody LoginRequest request) {
-        return ResponseEntity.ok(authService.login(request));
+    public ResponseEntity<ApiResponse<AuthResponse>> login(@Valid @RequestBody LoginRequest request) {
+        AuthResponse authResponse = authService.login(request);
+        return ResponseEntity.ok(ApiResponse.success("Login successful", authResponse));
     }
     
     @PostMapping("/refreshtoken")
-    public ResponseEntity<TokenRefreshResponse> refreshToken(@Valid @RequestBody TokenRefreshRequest request) {
-        return ResponseEntity.ok(authService.refreshToken(request));
+    public ResponseEntity<ApiResponse<TokenRefreshResponse>> refreshToken(@Valid @RequestBody TokenRefreshRequest request) {
+        TokenRefreshResponse tokenRefreshResponse = authService.refreshToken(request);
+        return ResponseEntity.ok(ApiResponse.success("Token refreshed successfully", tokenRefreshResponse));
     }
     
     @PostMapping("/logout")
     @PreAuthorize("isAuthenticated()")
-    public ResponseEntity<MessageResponse> logout(HttpServletRequest request) {
+    public ResponseEntity<ApiResponse<MessageResponse>> logout(HttpServletRequest request) {
         String message = authService.logout(request);
-        return ResponseEntity.ok(new MessageResponse(message));
+        return ResponseEntity.ok(ApiResponse.success(message, new MessageResponse(message)));
     }
 } 
